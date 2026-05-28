@@ -1,5 +1,18 @@
 {
   "title": "FusionSolarPlus",
+  "entity": {
+    "select": {
+      "active_power_control": {
+        "name": "Active Power Control",
+        "state": {
+          "no_limit": "No limit",
+          "zero_export_limitation": "Zero Export Limitation",
+          "limited_power_grid_kw": "Limited Power Grid (kW)",
+          "limited_power_grid_percent": "Limited Power Grid (%)"
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {

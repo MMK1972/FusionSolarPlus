@@ -29,6 +29,7 @@ DEVICE_TYPE_BATTERY = "Battery"
 DEVICE_TYPE_POWER_SENSOR = "Power Sensor"
 DEVICE_TYPE_EMMA = "SmartAssistant"
 DEVICE_TYPE_BACKUPBOX = "BackupBox"
+DEVICE_TYPE_DONGLE = "Dongle"
 
 DEVICE_TYPE_OPTIONS = {
     "Plant": DEVICE_TYPE_PLANT,
@@ -38,6 +39,7 @@ DEVICE_TYPE_OPTIONS = {
     "Power Sensor": DEVICE_TYPE_POWER_SENSOR,
     "SmartAssistant": DEVICE_TYPE_EMMA,
     "BackupBox": DEVICE_TYPE_BACKUPBOX,
+    "Dongle": DEVICE_TYPE_DONGLE,
 }
 
 
@@ -231,6 +233,16 @@ class FusionSolarPlusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if device["type"] == "BackupBox":
                             device_dn = device["deviceDn"]
                             device_options[f"BackupBox (ID: {device_dn})"] = device_dn
+
+                # Handle Dongle
+                elif self.device_type == DEVICE_TYPE_DONGLE:
+                    response = await self.hass.async_add_executor_job(
+                        self.client.get_device_ids
+                    )
+                    for device in response:
+                        if device["type"] == "Dongle":
+                            device_dn = device["deviceDn"]
+                            device_options[f"Dongle (ID: {device_dn})"] = device_dn
 
                 if not device_options:
                     _LOGGER.warning(

@@ -8,7 +8,7 @@ from .sensor import DeviceHandlerFactory
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = ["sensor", "switch"]
+PLATFORMS: list[str] = ["sensor", "switch", "select"]
 
 
 async def async_setup_entry(hass, entry):
@@ -35,13 +35,22 @@ async def async_setup_entry(hass, entry):
 
     device_id = entry.data.get("device_id")
     device_name = entry.data.get("device_name")
-    device_type = entry.data.get("device_type")
+    config_device_type = entry.data.get("device_type")
+    actual_device_type = await _resolve_device_type(hass, client, entry)
+
+    if actual_device_type != config_device_type:
+        _LOGGER.warning(
+            "FusionSolarPlus: Config entry device_type '%s' does not match detected type '%s' for device %s. Using detected type for setup.",
+            config_device_type,
+            actual_device_type,
+            device_id,
+        )
 
     device_info = {
         "identifiers": {(DOMAIN, str(device_id))},
         "name": device_name,
         "manufacturer": "FusionSolar",
-        "model": device_type or "Unknown",
+        "model": actual_device_type or config_device_type or "Unknown",
         "via_device": None,
     }
     hass.data[DOMAIN][f"{entry.entry_id}_device_info"] = device_info
@@ -62,12 +71,34 @@ async def async_setup_entry(hass, entry):
         identifiers={(DOMAIN, str(entry.data["device_id"]))},
         manufacturer="FusionSolar",
         name=entry.data["device_name"],
-        model=entry.data["device_type"],
+        model=device_info["model"],
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+async def _resolve_device_type(hass, client, entry):
+    """Resolve actual device type from the API when the config entry may be wrong."""
+    device_type = entry.data.get("device_type")
+    device_id = entry.data.get("device_id")
+    if not device_id or not device_type:
+        return device_type
+
+    try:
+        devices = await hass.async_add_executor_job(client.get_device_ids)
+        for device in devices:
+            if device.get("deviceDn") == device_id:
+                return device.get("type", device_type)
+    except Exception as err:
+        _LOGGER.debug(
+            "FusionSolarPlus: Unable to resolve device type for %s: %s",
+            device_id,
+            err,
+        )
+
+    return device_type
 
 
 async def update_listener(hass, entry):

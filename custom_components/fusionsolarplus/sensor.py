@@ -16,6 +16,7 @@ from .devices.battery.sensor import BatteryDeviceHandler
 from .devices.powersensor.sensor import PowerSensorDeviceHandler
 from .devices.backupbox.sensor import BackupBoxDeviceHandler
 from .devices.emma.sensor import EMMADeviceHandler
+from .devices.dongle.sensor import DongleDeviceHandler
 
 from .device_handler import BaseDeviceHandler
 
@@ -29,7 +30,7 @@ class DeviceHandlerFactory:
     def create_handler(
         hass: HomeAssistant, entry: ConfigEntry, device_info: Dict[str, Any]
     ) -> BaseDeviceHandler:
-        device_type = entry.data.get("device_type")
+        device_type = device_info.get("model") or entry.data.get("device_type")
 
         if device_type == "Inverter":
             return InverterDeviceHandler(hass, entry, device_info)
@@ -39,12 +40,15 @@ class DeviceHandlerFactory:
             return BatteryDeviceHandler(hass, entry, device_info)
         elif device_type == "Power Sensor":
             return PowerSensorDeviceHandler(hass, entry, device_info)
-        elif device_type == "Charger":
+        elif device_type == "Charger" or device_type == "Charging Pile":
             return ChargerDeviceHandler(hass, entry, device_info)
         elif device_type == "BackupBox":
             return BackupBoxDeviceHandler(hass, entry, device_info)
         elif device_type == "EMMA" or device_type == "SmartAssistant":
             return EMMADeviceHandler(hass, entry, device_info)
+        elif device_type == "Dongle":
+            _LOGGER.info(f"Creating DongleDeviceHandler for device {entry.data.get('device_name')}")
+            return DongleDeviceHandler(hass, entry, device_info)
         else:
             raise ValueError(f"Unsupported device type: {device_type}")
 

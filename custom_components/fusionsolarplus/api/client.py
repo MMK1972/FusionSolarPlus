@@ -32,6 +32,7 @@ from .devices import (
     charger_api,
     plant_api,
     emma_api,
+    dongle_api,
 )
 
 # global logger object
@@ -877,32 +878,36 @@ class FusionSolarClient:
         return battery_api.get_battery_data(self, battery_id)
 
     @logged_in
-    def active_power_control(self, power_setting) -> None:
-        """apply active power control.
+    def active_power_control(self, power_setting: str) -> None:
+        """Apply active power control.
         This can be useful when electricity prices are
         negative (sunny summer holiday) and you want
-        to limit the power exported into the grid"""
-        power_setting_options = {
-            "No limit": 0,
-            "Zero Export Limitation": 5,
-            "Limited Power Grid (kW)": 6,
-            "Limited Power Grid (%)": 7,
-        }
-        if power_setting not in power_setting_options:
-            raise ValueError("Unknown power setting")
+        to limit the power exported into the grid.
+        
+        :param power_setting: One of 'No limit', 'Zero Export Limitation', 
+                              'Limited Power Grid (kW)', 'Limited Power Grid (%)'
+        :type power_setting: str
+        :raises ValueError: If power_setting is not a valid option
+        """
+        return dongle_api.set_active_power_control(self, power_setting)
 
-        device_ids = self.get_device_ids()
-        dongle_id = list(filter(lambda e: e["type"] == "Dongle", device_ids))[0]["id"]
+    @logged_in
+    def get_active_power_control_setting(self) -> str:
+        """Get the current active power control setting.
+        
+        :return: Current power setting name or 'No limit' if unable to determine
+        :rtype: str
+        """
+        return dongle_api.get_active_power_control(self)
 
-        url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/deviceExt/set-config-signals"
-        data = {
-            "dn": dongle_id,  # power control needs to be done in the dongle
-            # 230190032 stands for "Active Power Control"
-            "changeValues": f'[{{"id":"230190032","value":"{power_setting_options[power_setting]}"}}]',
-        }
-
-        r = self._session.post(url, data=data)
-        r.raise_for_status()
+    @logged_in
+    def get_dongle_data(self) -> dict:
+        """Get dongle configuration data including active power control.
+        
+        :return: Dictionary with dongle configuration
+        :rtype: dict
+        """
+        return dongle_api.get_dongle_data(self)
 
     @logged_in
     def get_plant_flow(self, plant_id: str) -> dict:
