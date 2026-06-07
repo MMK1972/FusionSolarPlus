@@ -32,7 +32,10 @@ CHARGING_ACTIVE_STATES = {
 
 # ── Handler ───────────────────────────────────────────────────────────────────
 
-async def _async_get_data(self) -> Dict[str, Any]:
+class ChargerSwitchHandler(BaseDeviceHandler):
+    """Handler that reads charger data and creates Switch entities."""
+
+    async def _async_get_data(self) -> Dict[str, Any]:
         """Haetaan sekä reaaliaikainen data että asetukset (config)."""
         async def fetch(client):
             # 1. Haetaan laturin reaaliaikainen tila
@@ -58,8 +61,7 @@ async def _async_get_data(self) -> Dict[str, Any]:
                 for dn_id, signals in charger_config["data"].items():
                     for signal in signals:
                         if "id" in signal and "value" in signal:
-                            # Käytetään tuplea (None, signal_id) varmistamaan yhteensopivuus 
-                            # olemassa olevan get_charger_data -rakenteen kanssa
+                            # Käytetään tuplea (None, signal_id) varmistamaan yhteensopivuus
                             value_map[(None, int(signal["id"]))] = signal["value"]
 
             return {
@@ -69,6 +71,7 @@ async def _async_get_data(self) -> Dict[str, Any]:
             }
             
         return await self._get_client_and_retry(fetch)
+
     def create_entities(self, coordinator: DataUpdateCoordinator) -> list:
         return [
             FusionSolarChargerControlSwitch(
@@ -95,92 +98,4 @@ class FusionSolarChargerControlSwitch(CoordinatorEntity, SwitchEntity):
         device_id = list(device_info["identifiers"])[0][1]
         self._attr_unique_id = f"{device_id}_charge_control"
         self._attr_name      = "Charge Control"
-        self._attr_icon      = "mdi:ev-station"
-
-        self.entity_id = generate_entity_id(
-            ENTITY_ID_FORMAT,
-            f"fsp_{device_id}_charge_control",
-            hass=coordinator.hass,
-        )
-
-    @property
-    def is_on(self) -> bool | None:
-        """Return True when charging is active.
-
-        Reads from the normalized value_map returned by the new charger_api.
-        Working Status signal id=10004: active states are 3, 8, 10, 11.
-        """
-        if self._optimistic_state is not None:
-            return self._optimistic_state
-
-        data = self.coordinator.data
-        if not data:
-            return None
-
-        # New coordinator format: {"raw_data": {...}, "value_map": {(type_id, signal_id): value}}
-        value_map = data.get("value_map", {})
-        for key, val in value_map.items():
-            if isinstance(key, tuple) and key[1] == SIGNAL_ID_WORKING_STATUS:
-                try:
-                    api_value = str(int(float(val)))
-                except (TypeError, ValueError):
-                    api_value = str(val)
-                is_charging = api_value in CHARGING_ACTIVE_STATES
-                if self._optimistic_state is not None and is_charging == self._optimistic_state:
-                    self._optimistic_state = None
-                return is_charging
-
-        return None
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Start charging."""
-        await self._charge_control("start")
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Stop charging."""
-        await self._charge_control("stop")
-
-    async def _charge_control(self, action: str) -> None:
-        device_dn = list(self._attr_device_info["identifiers"])[0][1]
-        _LOGGER.debug("Charge control %s → %s", device_dn, action)
-        self._optimistic_state = (action == "start")
-        self.async_write_ha_state()
-        client = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
-        try:
-            await self.hass.async_add_executor_job(
-                client.charge_control, device_dn, action
-            )
-        except Exception as err:
-            _LOGGER.error("Charge control %s failed: %s", action, err)
-            self._optimistic_state = None
-            self.async_write_ha_state()
-
-    @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success and self.coordinator.data is not None
-
-
-# ── Platform setup ────────────────────────────────────────────────────────────
-
-async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
-) -> None:
-    """Set up switch platform for Charger devices."""
-    device_name = entry.data.get("device_name")
-    device_info = hass.data[DOMAIN].get(f"{entry.entry_id}_device_info")
-
-    if not device_info:
-        _LOGGER.debug("Device info not found for %s. Skipping switch setup.", device_name)
-        return
-
-    try:
-        handler = ChargerSwitchHandler(hass, entry, device_info)
-        coordinator = hass.data[DOMAIN].get(f"{entry.entry_id}_coordinator")
-        if coordinator is None:
-            _LOGGER.debug("No coordinator for %s. Skipping switch setup.", device_name)
-            return
-        entities = handler.create_entities(coordinator)
-        _LOGGER.info("Adding %d switch entities for device %s", len(entities), device_name)
-        async_add_entities(entities)
-    except Exception as e:
-        _LOGGER.error("Failed to set up switch entities for device %s: %s", device_name, e)
+        self._attr
