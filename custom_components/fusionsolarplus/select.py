@@ -58,7 +58,14 @@ async def async_setup_entry(
         if handler is None:
             return
 
-        coordinator = await handler.create_coordinator()
+        # Haetaan yhteinen koordinaattori Home Assistantin muistista (ei luoda uutta)
+        coordinator = hass.data[DOMAIN].get(f"{entry.entry_id}_coordinator")
+        if not coordinator:
+            _LOGGER.debug(
+                "No coordinator found for device %s. Skipping select setup.", device_name
+            )
+            return
+
         entities = handler.create_entities(coordinator)
 
         _LOGGER.info(
