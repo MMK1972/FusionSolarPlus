@@ -9,9 +9,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .device_handler import BaseDeviceHandler
-from .devices.charger.number import ChargerNumberHandler
 
 _LOGGER = logging.getLogger(__name__)
+
+# Vikasietoiset tuonnit
+try:
+    from .devices.charger.number import ChargerNumberHandler
+except ImportError:
+    ChargerNumberHandler = None
+
+try:
+    from .devices.dongle.number import DongleNumberHandler
+except ImportError:
+    DongleNumberHandler = None
 
 class NumberHandlerFactory:
     """Create appropriate number handlers."""
@@ -21,8 +31,15 @@ class NumberHandlerFactory:
         hass: HomeAssistant, entry: ConfigEntry, device_info: Dict[str, Any]
     ) -> BaseDeviceHandler | None:
         device_type = device_info.get("model") or entry.data.get("device_type")
-        if device_type == "Charger" or device_type == "Charging Pile":
+        
+        # Laturin säätimet
+        if (device_type == "Charger" or device_type == "Charging Pile") and ChargerNumberHandler:
             return ChargerNumberHandler(hass, entry, device_info)
+            
+        # Donglen säätimet (UUSI!)
+        elif device_type == "Dongle" and DongleNumberHandler:
+            return DongleNumberHandler(hass, entry, device_info)
+            
         return None
 
 async def async_setup_entry(
@@ -37,18 +54,16 @@ async def async_setup_entry(
 
     try:
         handler = NumberHandlerFactory.create_handler(hass, entry, device_info)
+
         if handler is None:
             return
 
-        # NOUDETAAN YHTEINEN KOORDINAATTORI MUISTISTA:
         coordinator = hass.data[DOMAIN].get(f"{entry.entry_id}_coordinator")
         if not coordinator:
-            _LOGGER.debug("No coordinator found for %s", device_name)
             return
 
         entities = handler.create_entities(coordinator)
-        _LOGGER.info("Adding %d number entities for device %s", len(entities), device_name)
         async_add_entities(entities)
 
     except Exception as e:
-        _LOGGER.error("Failed to set up number entities for device %s: %s", device_name, e)
+        _LOGGER.error("Failed to set up numbers for device %s: %s", device_name, e)
