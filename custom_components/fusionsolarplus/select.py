@@ -9,12 +9,29 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .device_handler import BaseDeviceHandler
-from .devices.inverter.select import InverterSelectHandler
-from .devices.dongle.select import DongleSelectHandler
-from .devices.charger.select import ChargerSelectHandler
-from .devices.emma.select import EMMASelectHandler
 
 _LOGGER = logging.getLogger(__name__)
+
+# Vikasietoiset tuonnit: ladataan vain ne tiedostot, jotka oikeasti ovat kansiossa
+try:
+    from .devices.inverter.select import InverterSelectHandler
+except ImportError:
+    InverterSelectHandler = None
+
+try:
+    from .devices.dongle.select import DongleSelectHandler
+except ImportError:
+    DongleSelectHandler = None
+
+try:
+    from .devices.charger.select import ChargerSelectHandler
+except ImportError:
+    ChargerSelectHandler = None
+
+try:
+    from .devices.emma.select import EMMASelectHandler
+except ImportError:
+    EMMASelectHandler = None
 
 
 class SelectHandlerFactory:
@@ -27,13 +44,13 @@ class SelectHandlerFactory:
         device_type = device_info.get("model") or entry.data.get("device_type")
         installer = entry.options.get("installer", entry.data.get("installer", False))
 
-        if device_type == "Inverter" and installer:
+        if device_type == "Inverter" and installer and InverterSelectHandler:
             return InverterSelectHandler(hass, entry, device_info)
-        elif device_type == "Dongle":
+        elif device_type == "Dongle" and DongleSelectHandler:
             return DongleSelectHandler(hass, entry, device_info)
-        elif device_type == "Charger" or device_type == "Charging Pile":
+        elif (device_type == "Charger" or device_type == "Charging Pile") and ChargerSelectHandler:
             return ChargerSelectHandler(hass, entry, device_info)
-        elif device_type in ("SmartAssistant", "EMMA"):
+        elif device_type in ("SmartAssistant", "EMMA") and EMMASelectHandler:
             return EMMASelectHandler(hass, entry, device_info)
             
         return None
@@ -58,7 +75,6 @@ async def async_setup_entry(
         if handler is None:
             return
 
-        # Haetaan yhteinen koordinaattori Home Assistantin muistista (ei luoda uutta)
         coordinator = hass.data[DOMAIN].get(f"{entry.entry_id}_coordinator")
         if not coordinator:
             _LOGGER.debug(
