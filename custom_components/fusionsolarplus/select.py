@@ -8,14 +8,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-<<<<<<< HEAD
+from .device_handler import BaseDeviceHandler
 from .devices.inverter.select import InverterSelectHandler
 from .devices.dongle.select import DongleSelectHandler
-from .device_handler import BaseDeviceHandler
-=======
 from .devices.charger.select import ChargerSelectHandler
 from .devices.emma.select import EMMASelectHandler
->>>>>>> gadjou/WallboxControls
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,10 +21,9 @@ class SelectHandlerFactory:
     """Create appropriate select handlers."""
 
     @staticmethod
-<<<<<<< HEAD
     def create_handler(
         hass: HomeAssistant, entry: ConfigEntry, device_info: Dict[str, Any]
-    ) -> BaseDeviceHandler:
+    ) -> BaseDeviceHandler | None:
         device_type = device_info.get("model") or entry.data.get("device_type")
         installer = entry.options.get("installer", entry.data.get("installer", False))
 
@@ -35,17 +31,12 @@ class SelectHandlerFactory:
             return InverterSelectHandler(hass, entry, device_info)
         elif device_type == "Dongle":
             return DongleSelectHandler(hass, entry, device_info)
-        else:
-            return None
-=======
-    def create_handler(hass, entry, device_info):
-        device_type = entry.data.get("device_type")
-        if device_type == "Charger":
+        elif device_type == "Charger" or device_type == "Charging Pile":
             return ChargerSelectHandler(hass, entry, device_info)
-        if device_type in ("SmartAssistant", "EMMA"):
+        elif device_type in ("SmartAssistant", "EMMA"):
             return EMMASelectHandler(hass, entry, device_info)
+            
         return None
->>>>>>> gadjou/WallboxControls
 
 
 async def async_setup_entry(
