@@ -8,11 +8,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .devices.inverter.switch import InverterSwitchHandler
-from .devices.charger.switch import ChargerSwitchHandler
 from .device_handler import BaseDeviceHandler
 
 _LOGGER = logging.getLogger(__name__)
+
+# Vikasietoiset tuonnit
+try:
+    from .devices.inverter.switch import InverterSwitchHandler
+except ImportError:
+    InverterSwitchHandler = None
+
+try:
+    from .devices.charger.switch import ChargerSwitchHandler
+except ImportError:
+    ChargerSwitchHandler = None
 
 
 class SwitchHandlerFactory:
@@ -21,14 +30,16 @@ class SwitchHandlerFactory:
     @staticmethod
     def create_handler(
         hass: HomeAssistant, entry: ConfigEntry, device_info: Dict[str, Any]
-    ) -> BaseDeviceHandler:
+    ) -> BaseDeviceHandler | None:
         device_type = device_info.get("model") or entry.data.get("device_type")
         installer = entry.options.get("installer", entry.data.get("installer", False))
 
-        if device_type == "Inverter" and installer:
+        if device_type == "Inverter" and installer and InverterSwitchHandler:
             return InverterSwitchHandler(hass, entry, device_info)
-        if device_type == "Charger":
+        # Tässä tunnistetaan nyt myös Charging Pile!
+        if (device_type == "Charger" or device_type == "Charging Pile") and ChargerSwitchHandler:
             return ChargerSwitchHandler(hass, entry, device_info)
+            
         return None
 
 
