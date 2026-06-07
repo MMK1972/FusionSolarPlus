@@ -32,6 +32,10 @@ POWER_SETTING_REVERSE = {
 # Signal ID for Active Power Control
 SIGNAL_ACTIVE_POWER_CONTROL = "230190032"
 
+# Uudet signaalit lukuarvojen lähettämiseen (kW ja %)
+SIGNAL_ACTIVE_POWER_LIMIT_KW = "230190033"
+SIGNAL_ACTIVE_POWER_LIMIT_PERCENT = "230190034"
+
 
 def get_dongle_id(client: Any) -> str | None:
     """Get the dongle device ID from the device list.
@@ -132,7 +136,7 @@ def get_active_power_control(client: Any) -> str:
         for key in ("name", "signalName", "signal_name"):
             if isinstance(signal, dict) and key in signal:
                 return signal.get(key)
-        return None
+            return None
 
     entries = _extract_signals(data)
     for signal in entries:
@@ -169,3 +173,36 @@ def get_dongle_data(client: Any) -> dict:
         "active_power_control": active_power_setting,
         "active_power_control_options": list(POWER_SETTING_OPTIONS.keys()),
     }
+
+
+def set_active_power_limit(client: Any, value: float) -> None:
+    """Asettaa aktiivitehon rajan (kW tai %)."""
+    dongle_id = get_dongle_id(client)
+    if not dongle_id:
+        raise ValueError("No Dongle device found. Cannot set limit.")
+
+    # Tarkistetaan, mikä tila on valittuna, jotta tiedämme lähetämmekö watteja vai prosentteja
+    current_mode = get_active_power_control(client)
+    
+    if current_mode == "Limited Power Grid (kW)":
+        signal_id = SIGNAL_ACTIVE_POWER_LIMIT_KW
+    elif current_mode == "Limited Power Grid (%)":
+        signal_id = SIGNAL_ACTIVE_POWER_LIMIT_PERCENT
+    else:
+        _LOGGER.warning("Yritettiin asettaa lukuarvo, mutta valittuna on tila: %s", current_mode)
+        return
+
+    url = f"https://{client._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/deviceExt/set-config-signals"
+    
+    # Huawei API haluaa luvun merkkijonona
+    val_str = str(value)
+    
+    params = {
+        "dn": dongle_id,
+        "changeValues": f'[{{"id":"{signal_id}","value":"{val_str}"}}]'
+    }
+    data = urlencode(params)
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    r = client._session.post(url, data=data, headers=headers)
+    r.raise_for_status()
