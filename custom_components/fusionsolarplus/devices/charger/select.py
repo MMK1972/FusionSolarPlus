@@ -31,40 +31,25 @@ WORKING_MODE_REVERSE = {v: k for k, v in WORKING_MODE_OPTIONS.items()}
 # ── Handler ───────────────────────────────────────────────────────────────────
 
 class ChargerSelectHandler(BaseDeviceHandler):
-    """Handler that fetches charger config and creates Select entities."""
-
-    async def _async_get_data(self) -> Dict[str, Any]:
-        async def fetch(client):
-            return await self.hass.async_add_executor_job(
-                client.get_charger_config, self.device_id
-            )
-        return await self._get_client_and_retry(fetch)
+    """Handler that creates Select entities for the charger using shared coordinator."""
 
     def create_entities(self, coordinator: DataUpdateCoordinator) -> list:
-        entities = []
-        if not coordinator.data:
-            return entities
-        for dn_key, signals in coordinator.data.items():
-            if not isinstance(signals, list):
-                continue
-            if any(s.get("id") == SIGNAL_ID_WORKING_MODE for s in signals):
-                entities.append(FusionSolarChargerWorkingModeSelect(
-                    coordinator=coordinator,
-                    device_info=self.device_info,
-                    child_dn_key=dn_key,
-                ))
-                break
-        return entities
+        # We don't fetch data here anymore, we use the shared coordinator
+        return [
+            FusionSolarChargerWorkingModeSelect(
+                coordinator=coordinator,
+                device_info=self.device_info,
+            )
+        ]
 
 
 # ── Entity ────────────────────────────────────────────────────────────────────
 
 class FusionSolarChargerWorkingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
-    """Selector for Working Mode (signal 20002 — child dnId)."""
+    """Selector for Working Mode (signal 20002)."""
 
-    def __init__(self, coordinator, device_info, child_dn_key):
+    def __init__(self, coordinator, device_info):
         super().__init__(coordinator)
-        self._child_dn_key     = child_dn_key
         self._attr_device_info = device_info
         self._current_key      = "0"
         self._pending_key      = None
@@ -72,6 +57,7 @@ class FusionSolarChargerWorkingModeSelect(CoordinatorEntity, SelectEntity, Resto
         device_id = list(device_info["identifiers"])[0][1]
         self._attr_unique_id = f"{device_id}_working_mode"
         self._attr_name      = "Working Mode"
+        self._attr_icon      = "mdi:solar-power"
         self._attr_options   = list(WORKING_MODE_OPTIONS.values())
 
         self.entity_id = generate_entity_id(
@@ -82,21 +68,33 @@ class FusionSolarChargerWorkingModeSelect(CoordinatorEntity, SelectEntity, Resto
 
     @property
     def current_option(self) -> str | None:
+        """Read current working mode from the coordinator's value_map."""
         data = self.coordinator.data
         if not data:
             if self._pending_key is not None:
                 return WORKING_MODE_OPTIONS.get(self._pending_key)
             return WORKING_MODE_OPTIONS.get(self._current_key)
-        signals = data.get(self._child_dn_key, [])
-        sig = next((s for s in signals if s.get("id") == SIGNAL_ID_WORKING_MODE), None)
-        if sig:
-            api_key = sig.get("value", "0")
-            self._current_key = api_key
-            if self._pending_key is not None and api_key == self._pending_key:
-                self._pending_key = None
-            if self._pending_key is not None:
-                return WORKING_MODE_OPTIONS.get(self._pending_key)
-            return WORKING_MODE_OPTIONS.get(api_key, WORKING_MODE_OPTIONS["0"])
+
+        # Read from the shared value_map
+        value_map = data.get("value_map", {})
+        for key, val in value_map.items():
+            if isinstance(key, tuple) and key[1] == SIGNAL_ID_WORKING_MODE:
+                try:
+                    api_key = str(int(float(val)))
+                except (TypeError, ValueError):
+                    api_key = str(val)
+
+                self._current_key = api_key
+                
+                # Clear pending key if the API matches what we set
+                if self._pending_key is not None and api_key == self._pending_key:
+                    self._pending_key = None
+                    
+                if self._pending_key is not None:
+                    return WORKING_MODE_OPTIONS.get(self._pending_key)
+                    
+                return WORKING_MODE_OPTIONS.get(api_key, WORKING_MODE_OPTIONS["0"])
+
         if self._pending_key is not None:
             return WORKING_MODE_OPTIONS.get(self._pending_key)
         return WORKING_MODE_OPTIONS.get(self._current_key)
@@ -106,14 +104,24 @@ class FusionSolarChargerWorkingModeSelect(CoordinatorEntity, SelectEntity, Resto
         if mode_key is None:
             _LOGGER.error("Unknown working mode: %s", option)
             return
+            
         device_dn = list(self._attr_device_info["identifiers"])[0][1]
         _LOGGER.debug("Setting working mode %s → %s (%s)", device_dn, option, mode_key)
+        
         self._pending_key = mode_key
         self.async_write_ha_state()
+        
         client = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
-        await self.hass.async_add_executor_job(
-            client.set_charger_working_mode, device_dn, mode_key
-        )
+        
+        try:
+            await self.hass.async_add_executor_job(
+                client.set_charger_working_mode, device_dn, mode_key
+            )
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Setting Working Mode %s failed: %s", option, err)
+            self._pending_key = None
+            self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -141,7 +149,12 @@ async def async_setup_entry(
 
     try:
         handler = ChargerSelectHandler(hass, entry, device_info)
-        coordinator = await handler.create_coordinator()
+        # Fetch the shared coordinator instead of creating a new one
+        coordinator = hass.data[DOMAIN].get(f"{entry.entry_id}_coordinator")
+        if coordinator is None:
+            _LOGGER.debug("No coordinator for %s. Skipping select setup.", device_name)
+            return
+            
         entities = handler.create_entities(coordinator)
         _LOGGER.info("Adding %d select entities for device %s", len(entities), device_name)
         async_add_entities(entities)
